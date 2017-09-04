@@ -118,10 +118,17 @@ namespace ToastyCallouts
             return ent && ent2 && !result.Hit;
         }
 
-        public static void SetOnGround(Entity entity, float groundLevelIncrement = 0.25f, bool treatWaterAsGround = false, bool anyMeans = true)
+        public static void SetOnGround(Entity ent, float groundLevelIncrement = 0.25f, bool treatWaterAsGround = false, bool anyMeans = true)
         {
-            var groundZ = World.GetGroundZ(entity.Position, false, true);
-            if (groundZ != null) entity.Position = new Vector3(entity.Position.X, entity.Position.Y, (float)groundZ + groundLevelIncrement);
+            var groundZ = World.GetGroundZ(ent.Position, false, true);
+            if (groundZ != null) ent.Position = new Vector3(ent.Position.X, ent.Position.Y, (float)groundZ + groundLevelIncrement);
+        }
+
+        public static Vector3 SetOnGround(Vector3 position, float groundLevelIncrement = 0.25f, bool treatWaterAsGround = false, bool anyMeans = true)
+        {
+            var groundZ = World.GetGroundZ(position, false, true);
+            if (groundZ != null) position = new Vector3(position.X, position.Y, (float)groundZ + groundLevelIncrement);
+            return position;
         }
 
         public static void EndAndClean(Entity[] entities, Blip[] blips = null, LHandle[] pursuits = null)
@@ -360,9 +367,9 @@ namespace ToastyCallouts
     }
 
     public class Checkpoint : IDeletable, ISpatial
-    {
-        private bool _valid = false;
-        private bool set_on_ground = true;
+    { //MADE BY PNWPARKSFAN
+        private bool _valid;
+        private bool _setOnGround = true;
 
         private Vector3 _position;
         public Vector3 Position
@@ -378,24 +385,24 @@ namespace ToastyCallouts
             }
         }
 
-        private Vector3 _next_position;
+        private Vector3 _nextPosition;
         public Vector3 NextPosition
         {
             get
             {
-                return _next_position;
+                return _nextPosition;
             }
             set
             {
-                _next_position = value;
+                _nextPosition = value;
                 ReCreateCheckpoint();
             }
         } // */
 
-        public float radius { get; private set; }
-        public float height { get; private set; }
+        public float Radius { get; private set; }
+        public float Height { get; private set; }
         private Color _color;
-        public Color color
+        public Color Color
         {
             get
             {
@@ -406,34 +413,34 @@ namespace ToastyCallouts
                 UpdateColor(value);
             }
         }
-        public int type { get; private set; }
-        public int reserved { get; private set; }
+        public int Type { get; private set; }
+        public int Reserved { get; private set; }
         public int Handle { get; private set; }
 
-        public Checkpoint(Vector3 Position, Color color, float radius, float height, int type = 47, int reserved = 0, bool set_on_ground = true)
+        public Checkpoint(Vector3 position, Color color, float radius, float height, int type = 47, int reserved = 0, bool setOnGround = true)
         {
-            this.type = type;
-            this._position = Position;
-            this.NextPosition = Position;
-            this.radius = radius;
-            this.color = color;
-            this.reserved = reserved;
-            this.set_on_ground = set_on_ground;
-            this.height = height;
+            this.Type = type;
+            this._position = position;
+            this.NextPosition = position;
+            this.Radius = radius;
+            this.Color = color;
+            this.Reserved = reserved;
+            this._setOnGround = setOnGround;
+            this.Height = height;
 
             CreateCheckpoint();
         }
 
-        public Checkpoint(Vector3 Position, Vector3 NextPosition, Color color, float radius, float height, int type = 0, int reserved = 0, bool set_on_ground = true)
+        public Checkpoint(Vector3 position, Vector3 nextPosition, Color color, float radius, float height, int type = 0, int reserved = 0, bool setOnGround = true)
         {
-            this.type = type;
-            this._position = Position;
-            this.NextPosition = NextPosition;
-            this.radius = radius;
-            this.color = color;
-            this.reserved = reserved;
-            this.set_on_ground = set_on_ground;
-            this.height = height;
+            this.Type = type;
+            this._position = position;
+            this.NextPosition = nextPosition;
+            this.Radius = radius;
+            this.Color = color;
+            this.Reserved = reserved;
+            this._setOnGround = setOnGround;
+            this.Height = height;
 
             CreateCheckpoint();
         }
@@ -446,19 +453,19 @@ namespace ToastyCallouts
 
         private void CreateCheckpoint()
         {
-            Vector3 place_position = Position;
-            if (set_on_ground)
+            Vector3 placePosition = Position;
+            if (_setOnGround)
             {
-                place_position = Position.ToGround();
+                placePosition = Extensions.SetOnGround(Position);
             }
 
             try
             {
-                int _handle = NativeFunction.CallByName<int>("CREATE_CHECKPOINT", type, place_position.X, place_position.Y, place_position.Z, NextPosition.X, NextPosition.Y, NextPosition.Z, radius, color.R, color.G, color.B, color.A, reserved);
-                Handle = _handle;
+                int handle = NativeFunction.CallByName<int>("CREATE_CHECKPOINT", Type, placePosition.X, placePosition.Y, placePosition.Z, NextPosition.X, NextPosition.Y, NextPosition.Z, Radius, Color.R, Color.G, Color.B, Color.A, Reserved);
+                Handle = handle;
                 _valid = true;
-                SetHeight(height, height, radius);
-                Game.LogTrivialDebug("Created checkpoint, handle = " + _handle);
+                SetHeight(Height, Height, Radius);
+                Game.LogTrivialDebug("Created checkpoint, handle = " + handle);
             }
             catch (Exception e)
             {
@@ -468,16 +475,16 @@ namespace ToastyCallouts
             }
         }
 
-        public void UpdateColor(Color new_color)
+        public void UpdateColor(Color newColor)
         {
-            this._color = new_color;
+            this._color = newColor;
             if (_valid)
-                NativeFunction.CallByName<uint>("SET_CHECKPOINT_RGBA", new_color.R, new_color.G, new_color.B, new_color.A);
+                NativeFunction.CallByName<uint>("SET_CHECKPOINT_RGBA", newColor.R, newColor.G, newColor.B, newColor.A);
         }
 
         public void SetHeight(float near, float far, float radius)
         {
-            height = far;
+            Height = far;
 
             if (_valid)
                 NativeFunction.CallByName<uint>("SET_CHECKPOINT_CYLINDER_HEIGHT", Handle, near, far, radius);
