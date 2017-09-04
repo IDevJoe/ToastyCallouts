@@ -44,11 +44,6 @@ namespace ToastyCallouts.Callouts
             {
                 _suspectPed.WarpIntoVehicle(_suspectVehicle, -1);
                 _officerPed.WarpIntoVehicle(_officerVehicle, -1);
-                //_officerVehicle.IsPositionFrozen = true;
-                //_officerPed.IsPositionFrozen = true;
-                /*Vehicle testVeh = Game.LocalPlayer.Character.CurrentVehicle;
-                Camera testCam = new Camera(true);
-                testCam.AttachToEntity(testVeh, testVeh.GetOffsetPositionUp(5f), true);*/
 
                 Extensions.SetOnGround(_suspectVehicle);
                 Extensions.SetOnGround(_officerVehicle);
