@@ -1,0 +1,10 @@
+C:\Users\toast\Desktop\My Work\Solutions and Projects\GTA V Modifications\ToastyCallouts\bin\Debug\ToastyCallouts.dll
+C:\Users\toast\Desktop\My Work\Solutions and Projects\GTA V Modifications\ToastyCallouts\bin\Debug\ToastyCallouts.pdb
+C:\Users\toast\Desktop\My Work\Solutions and Projects\GTA V Modifications\ToastyCallouts\bin\Debug\LSPD First Response.dll
+C:\Users\toast\Desktop\My Work\Solutions and Projects\GTA V Modifications\ToastyCallouts\bin\Debug\RAGENativeUI.dll
+C:\Users\toast\Desktop\My Work\Solutions and Projects\GTA V Modifications\ToastyCallouts\bin\Debug\RagePluginHookSDK.dll
+C:\Users\toast\Desktop\My Work\Solutions and Projects\GTA V Modifications\ToastyCallouts\bin\Debug\RAGENativeUI.xml
+C:\Users\toast\Desktop\My Work\Solutions and Projects\GTA V Modifications\ToastyCallouts\bin\Debug\RagePluginHookSDK.xml
+C:\Users\toast\Desktop\My Work\Solutions and Projects\GTA V Modifications\ToastyCallouts\obj\Debug\ToastyCallouts.csprojResolveAssemblyReference.cache
+C:\Users\toast\Desktop\My Work\Solutions and Projects\GTA V Modifications\ToastyCallouts\obj\Debug\ToastyCallouts.dll
+C:\Users\toast\Desktop\My Work\Solutions and Projects\GTA V Modifications\ToastyCallouts\obj\Debug\ToastyCallouts.pdb
