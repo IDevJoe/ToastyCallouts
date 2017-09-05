@@ -26,13 +26,14 @@ namespace ToastyCallouts.Callouts
 
         PlayerPursuitStatus _status = PlayerPursuitStatus.NONE;
 
-        private event EventHandler<bool> AIVisualChanged;
-        private bool AIHasVisual;
+        private event EventHandler<bool> AIVisualChanged, PlayerVisualChanged;
+        private bool AIHasVisual, PlayerHasVisual;
 
         public override bool OnBeforeCalloutDisplayed()
         {
             _sP = Spawnpoints.GetGoodSpawnpoint();
             AIVisualChanged += OnAIVisualChanged;
+            PlayerVisualChanged += OnPlayerVisualChanged;
 
             _suspectVehicle = new Vehicle("BJXL", _sP) { IsPersistent = true };
             _suspectPed = new Ped(_sP) { IsPersistent = true, BlockPermanentEvents = true };
@@ -47,6 +48,8 @@ namespace ToastyCallouts.Callouts
 
                 Extensions.SetOnGround(_suspectVehicle);
                 Extensions.SetOnGround(_officerVehicle);
+
+                Extensions.SpectateCameraNormal(_officerVehicle);
             }
             else
             {
@@ -66,10 +69,21 @@ namespace ToastyCallouts.Callouts
 
         private void OnAIVisualChanged(object sender, bool val)
         {
-            if (!val)
+            if (_status != PlayerPursuitStatus.PLAYER_HAS_VISUAL && !val)
             {
                 Game.LogTrivial("[TOASTYCALLOUTS PursuitinProgress - DoesAIHaveVisualOnSuspect()]: AI lost visual of suspect, ending callout.");
                 Functions.PlayScannerAudio("HELI_NO_VISUAL_DISPATCH_02 10-4 CODE4");
+                End();
+            }
+        }
+
+        private void OnPlayerVisualChanged(object sender, bool val)
+        {
+            if (!val)
+            {
+                Game.LogTrivial("[TOASTYCALLOUTS PursuitinProgress - DoesAIHaveVisualOnSuspect()]: Player lost visual of suspect, ending callout.");
+
+                //want to check if AI has visual from the other event
                 End();
             }
         }
@@ -131,11 +145,18 @@ namespace ToastyCallouts.Callouts
                     break;
             }
 
-            bool v = Extensions.IsEntityVisible(_suspectPed, _officerPed);
-            if (AIHasVisual != v)
+            bool AIHasVisualCheck = Extensions.IsEntityVisible(_suspectPed, _officerPed);
+            if (AIHasVisual != AIHasVisualCheck)
             {
-                AIHasVisual = v;
+                AIHasVisual = AIHasVisualCheck;
                 AIVisualChanged?.Invoke(this, AIHasVisual);
+            }
+
+            bool PlayerHasVisualCheck = Extensions.IsEntityVisible(_suspectPed);
+            if (PlayerHasVisual != PlayerHasVisualCheck)
+            {
+                PlayerHasVisual = PlayerHasVisualCheck;
+                PlayerVisualChanged?.Invoke(this, AIHasVisual);
             }
 
             base.Process();
