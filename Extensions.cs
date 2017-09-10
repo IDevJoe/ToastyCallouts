@@ -4,6 +4,7 @@ using Rage;
 using Rage.Native;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
 using System.Linq;
@@ -56,7 +57,7 @@ namespace ToastyCallouts
         }
 
         public static Ped PolicePed(Vector3 spawnpoint)
-        { //S_M_Y_COP_01, S_F_Y_COP_01, CSB_COP
+        { //S_M_Y_COP_01, S_F_Y_COP_01, S_M_Y_SHERIFF_01, S_F_Y_SHERIFF_01, CSB_COP, S_M_Y_HWAYCOP_01
             Model[] cityPedModels =
             {
                 "S_M_Y_COP_01",
@@ -104,10 +105,22 @@ namespace ToastyCallouts
             return tempHeading;
         }
 
+        public static Vector3 ClosestVehicleNodePosition(Vector3 pos)
+        {
+            Vector3 tempCoords;
+            NativeFunction.Natives.GET_CLOSEST_VEHICLE_NODE(pos.X, pos.Y, pos.Z, out tempCoords, 0, 3f, 0);
+            return tempCoords;
+        }
+
         public static bool IsEntityVisible(Entity ent)
         {
-            Entity[] entitiesToIgnore = { Main.Player, ent };
-            HitResult result = World.TraceLine(Main.Player.Position, ent.Position, TraceFlags.IntersectWorld, entitiesToIgnore);
+            HitResult result;
+
+            if (ent)
+            {
+                Entity[] entitiesToIgnore = { Main.Player, ent };
+                result = World.TraceLine(Main.Player.Position, ent.Position, TraceFlags.IntersectWorld, entitiesToIgnore);
+            }
 
             return ent && !result.Hit;
         }
@@ -120,10 +133,9 @@ namespace ToastyCallouts
             return ent && ent2 && !result.Hit;
         }
 
-        public static void SetOnGround(Entity ent, float groundLevelIncrement = 0.25f, bool treatWaterAsGround = false, bool anyMeans = true)
+        public static void DebugLog(string text)
         {
-            var groundZ = World.GetGroundZ(ent.Position, false, true);
-            if (groundZ != null) ent.Position = new Vector3(ent.Position.X, ent.Position.Y, (float)groundZ + groundLevelIncrement);
+            Game.LogTrivialDebug("[TOASTY CALLOUTS - DEBUG]: " + text);
         }
 
         public static Vector3 SetOnGround(Vector3 position, float groundLevelIncrement = 0.25f, bool treatWaterAsGround = false, bool anyMeans = true)
@@ -131,6 +143,49 @@ namespace ToastyCallouts
             var groundZ = World.GetGroundZ(position, false, true);
             if (groundZ != null) position = new Vector3(position.X, position.Y, (float)groundZ + groundLevelIncrement);
             return position;
+        }
+
+        public static void SpectateCameraAbove(Entity entToSpectate)
+        {
+            GameFiber.StartNew(delegate
+            {
+                Camera cam = new Camera(true);
+                cam.AttachToEntity(entToSpectate, new Vector3(0, 0, 13f), true);
+                cam.PointAtEntity(entToSpectate, new Vector3(0, 0, 0), true);
+
+                while (true)
+                {
+                    GameFiber.Yield();
+
+                    if (Game.IsKeyDown(Keys.D9))
+                    {
+                        if (cam) cam.Delete();
+                        break;
+                    }
+                }
+            });
+        }
+
+        public static void SpectateCameraNormal(Entity entToSpectate)
+        {
+            GameFiber.StartNew(delegate
+            {
+                Camera cam = new Camera(true);
+                cam.AttachToEntity(entToSpectate, new Vector3(0, -5f, 2.5f), true);
+                cam.PointAtEntity(entToSpectate, new Vector3(0, 0, 0), true);
+
+                while (true)
+                {
+                    GameFiber.Yield();
+                    cam.PointAtEntity(entToSpectate, new Vector3(0, 0, 0), true);
+
+                    if (Game.IsKeyDown(Keys.D9))
+                    {
+                        if (cam) cam.Delete();
+                        break;
+                    }
+                }
+            });
         }
 
         public static void EndAndClean(Entity[] entities, Blip[] blips = null, LHandle[] pursuits = null)
@@ -165,6 +220,198 @@ namespace ToastyCallouts
                     }
                 }
             }
+        }
+
+        public static void PrintRecursiveExceptions(Exception ex, int i = 0)
+        { //MADE BY PNWPARKSFAN
+            Game.LogTrivial("--------------------");
+            Game.LogTrivial("[TOASTY CALLOUTS - EXCEPTIONS]: ");
+            Game.LogTrivial(ex.Message);
+            Game.LogTrivialDebug(ex.StackTrace);
+            if (ex.InnerException != null && i < 10)
+            {
+                PrintRecursiveExceptions(ex.InnerException, i + 1);
+            }
+        }
+    }
+
+    public class PursuitVisual
+    {
+        private static event EventHandler<bool> AIVisualChanged, PlayerVisualChanged;
+        public static bool _aiHasVisual, _aiHasVisualCheck, _playerHasVisual, _playerHasVisualCheck;
+        private static Ped[] _suspectPeds = null;
+        private static Ped[] _officerPeds = null;
+        private static PursuitVisual _aiVisual, _playerVisual;
+
+        public static void Start(LHandle pursuit, bool endCalloutWhenFinished)
+        {
+            GameFiber.StartNew(delegate
+            { //AI cops' visual seems to not matter when starting timer.
+                if (pursuit != null && Functions.IsPursuitStillRunning(pursuit))
+                {
+                    string[] policePedModels = { "S_M_Y_COP_01", "S_F_Y_COP_01", "S_M_Y_SHERIFF_01", "S_F_Y_SHERIFF_01", "CSB_COP", "S_M_Y_HWAYCOP_01" };
+
+                    _suspectPeds = Functions.GetPursuitPeds(pursuit).Where(x => !policePedModels.Contains(x.Model.Name) && !x.IsLocalPlayer).ToArray();
+                    _officerPeds = Functions.GetPursuitPeds(pursuit).Where(x => policePedModels.Contains(x.Model.Name) && !x.IsLocalPlayer).ToArray();
+                }
+
+                AIVisualChanged += (object sender, bool aiVisualStatus) =>
+                {
+                    _aiVisual = (PursuitVisual)sender;
+
+                    if (aiVisualStatus)
+                    {
+                        Extensions.DebugLog("AI has visual.");
+                    }
+
+                    if (!aiVisualStatus)
+                    {
+                        Extensions.DebugLog("AI does not have visual.");
+                    }
+                };
+
+                PlayerVisualChanged += (object sender, bool playerVisualStatus) =>
+                {
+                    _playerVisual = (PursuitVisual)sender;
+
+                    if (playerVisualStatus)
+                    {
+                        Extensions.DebugLog("Player has visual.");
+                    }
+
+                    if (!playerVisualStatus && !_aiHasVisualCheck)
+                    {
+                        Extensions.DebugLog("Player and AI does not have visual.");
+                        StartTimer();
+                    }
+                    else if (!playerVisualStatus && _aiHasVisualCheck)
+                    {
+                        Extensions.DebugLog("Player does not have visual, but AI does have visual.");
+                        PursuitUpdates();
+                    }
+                };
+
+                while (true)
+                {
+                    GameFiber.Yield();
+
+                    if (pursuit != null && Functions.IsPursuitStillRunning(pursuit)) Functions.SetPursuitIsActiveForPlayer(pursuit, true);
+                    if (_suspectPeds != null && _officerPeds != null)
+                    {
+                        foreach (var suspectPed in _suspectPeds)
+                        {
+                            foreach (var officerPed in _officerPeds)
+                            {
+                                if (suspectPed && officerPed) _aiHasVisualCheck = Extensions.IsEntityVisible(suspectPed, officerPed);
+                            }
+                            GameFiber.Yield();
+                        }
+                    }
+
+                    if (_aiHasVisual != _aiHasVisualCheck)
+                    {
+                        _aiHasVisual = _aiHasVisualCheck;
+                        AIVisualChanged?.Invoke(_aiVisual, _aiHasVisual);
+                    }
+
+                    if (_suspectPeds != null)
+                    {
+                        foreach (var suspectPed in _suspectPeds)
+                        {
+                            if (suspectPed) _playerHasVisualCheck = Extensions.IsEntityVisible(suspectPed);
+                        }
+                    }
+
+                    if (_playerHasVisual != _playerHasVisualCheck)
+                    {
+                        _playerHasVisual = _playerHasVisualCheck;
+                        PlayerVisualChanged?.Invoke(_playerVisual, _playerHasVisual);
+                    }
+
+                    if (endCalloutWhenFinished && pursuit != null && !Functions.IsPursuitStillRunning(pursuit))
+                    {
+                        Extensions.DebugLog("No pursuit active, ending callout.");
+                        if (Functions.IsCalloutRunning()) Functions.StopCurrentCallout();
+                        break;
+                    }
+
+                    if (pursuit != null && !Functions.IsPursuitStillRunning(pursuit))
+                    {
+                        Extensions.DebugLog("No pursuit active.");
+                        break;
+                    }
+                }
+            });
+        }
+
+        private static void StartTimer()
+        {
+            GameFiber.StartNew(delegate
+            {
+                Extensions.DebugLog("Starting timer.");
+                Stopwatch timer = new Stopwatch();
+                timer.Start();
+
+                while (true)
+                {
+                    GameFiber.Yield();
+
+                    if (!_playerHasVisualCheck && !_aiHasVisualCheck && timer.ElapsedMilliseconds >= 10000)
+                    {
+                        Extensions.DebugLog("Time exceeded and no visual has been made, ending pursuit.");
+                        Functions.PlayScannerAudio("HELI_NO_VISUAL_DISPATCH_02 10-4 CODE4");
+
+                        LHandle pursuit = Functions.GetActivePursuit();
+                        if (pursuit != null && Functions.IsPursuitStillRunning(pursuit)) Functions.ForceEndPursuit(pursuit);
+                        break;
+                    }
+
+                    if (_playerHasVisualCheck || _aiHasVisualCheck)
+                    {
+                        Extensions.DebugLog("Resetting timer, visual was made.");
+                        timer.Reset();
+                        break;
+                    }
+                }
+            });
+        }
+
+        private static void PursuitUpdates()
+        {
+            GameFiber.StartNew(delegate
+            {
+                Vector3 suspectPosition = new Vector3(0, 0, 0);
+                LHandle pursuit = Functions.GetActivePursuit();
+
+                Stopwatch timer = new Stopwatch();
+                timer.Start();
+
+                while (true)
+                {
+                    GameFiber.Yield();
+
+                    if (_suspectPeds != null)
+                    {
+                        foreach (var suspectPed in _suspectPeds)
+                        {
+                            if (suspectPed) suspectPosition = suspectPed.Position;
+                            GameFiber.Yield();
+                        }
+                    }
+
+                    if (suspectPosition != new Vector3(0, 0, 0) && timer.ElapsedMilliseconds >= 15000)
+                    {
+                        timer.Restart();
+                        Functions.PlayScannerAudioUsingPosition("SUSPECT_IS IN_OR_ON_POSITION", suspectPosition);
+                    }
+
+                    if (_playerHasVisualCheck || (pursuit != null && !Functions.IsPursuitStillRunning(pursuit)))
+                    {
+                        timer.Reset();
+                        break;
+                    }
+                }
+            });
         }
     }
 
