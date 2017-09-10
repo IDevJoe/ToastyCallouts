@@ -13,24 +13,19 @@ namespace ToastyCallouts
 
         public override void Initialize()
         {
-            Game.LogTrivial("[TOASTYCALLOUTS]: Initialize() has been called in class Main.");
-            Game.LogTrivial("[TOASTYCALLOUTS]: Current TC version is " + Assembly.GetExecutingAssembly().GetName().Version);
-
+            Game.LogTrivial("[TOASTY CALLOUTS]: Current version is " + Assembly.GetExecutingAssembly().GetName().Version);
             Functions.OnOnDutyStateChanged += OnOnDutyStateChangedHandler;
         }
 
         public override void Finally()
         {
-            Game.LogTrivial("[TOASTYCALLOUTS]: Finally() has been called in class Main.");
+            Game.LogTrivial("[TOASTY CALLOUTS]: End has been called.");
         }
 
         private static void OnOnDutyStateChangedHandler(bool onDuty)
         {
-            Game.LogTrivial("[TOASTYCALLOUTS]: OnOnDutyStateChangedHandler(bool onDuty) has been called in class Main.");
-
             if (onDuty)
             {
-                Game.LogTrivial("[TOASTYCALLOUTS]: bool onDuty is true.");
                 Functions.RegisterCallout(typeof(PursuitinProgress));
             }
         }
