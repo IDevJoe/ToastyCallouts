@@ -8,8 +8,6 @@ namespace ToastyCallouts
     {
         public static Vector3 GetGoodSpawnpoint()
         {
-            Game.LogTrivial("[TOASTYCALLOUTS - GetGoodSpawnpoint()]: Called in class Spawnpoints.");
-
             List<Vector3> sP = new List<Vector3>()
             {
                 new Vector3(-155.74f, 6344.41f, 31.16f).Around2D(125f), //paletoBayV1
@@ -34,8 +32,8 @@ namespace ToastyCallouts
                 new Vector3(-90.28f, -1476.92f, 32.37f).Around2D(200f), //cityV7
                 new Vector3(931.86f, -1998.72f, 29.83f).Around2D(200f) //cityV8
             };
-
-            return sP.Where(x => x.DistanceTo(Main.Player) >= 300f).OrderBy(x => x.DistanceTo(Main.Player)).FirstOrDefault();
+            
+            return Extensions.ClosestVehicleNodePosition(World.GetNextPositionOnStreet(sP.Where(x => x.DistanceTo2D(Main.Player) >= 300f).OrderBy(x => x.DistanceTo2D(Main.Player)).FirstOrDefault()));
         }
     }
 }

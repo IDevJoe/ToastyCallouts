@@ -17,23 +17,9 @@ namespace ToastyCallouts.Callouts
         private Vehicle _suspectVehicle, _officerVehicle;
         private Blip _suspectBlip;
 
-        private enum PlayerPursuitStatus
-        {
-            NONE,
-            PLAYER_HAS_NO_VISUAL,
-            PLAYER_HAS_VISUAL
-        }
-
-        PlayerPursuitStatus _status = PlayerPursuitStatus.NONE;
-
-        private event EventHandler<bool> AIVisualChanged, PlayerVisualChanged;
-        private bool AIHasVisual, PlayerHasVisual;
-
         public override bool OnBeforeCalloutDisplayed()
         {
             _sP = Spawnpoints.GetGoodSpawnpoint();
-            AIVisualChanged += OnAIVisualChanged;
-            PlayerVisualChanged += OnPlayerVisualChanged;
 
             _suspectVehicle = new Vehicle("BJXL", _sP) { IsPersistent = true };
             _suspectPed = new Ped(_sP) { IsPersistent = true, BlockPermanentEvents = true };
@@ -46,14 +32,31 @@ namespace ToastyCallouts.Callouts
                 _suspectPed.WarpIntoVehicle(_suspectVehicle, -1);
                 _officerPed.WarpIntoVehicle(_officerVehicle, -1);
 
-                Extensions.SetOnGround(_suspectVehicle);
-                Extensions.SetOnGround(_officerVehicle);
+                _suspectVehicle.Heading = Extensions.ClosestVehicleHeading(_sP);
+                _officerVehicle.Heading = _suspectVehicle.Heading;
 
+                Extensions.DebugLog("Vehicles spawned = " + _suspectVehicle.Model + " and " + _officerVehicle.Model);
                 Extensions.SpectateCameraNormal(_officerVehicle);
             }
             else
             {
-                Game.LogTrivial("[TOASTYCALLOUTS PursuitinProgress - OnBeforeCalloutDisplayer()]: Vehicle or ped did not exist, ending callout and informing player.");
+                try
+                {
+                    if (!_suspectVehicle) throw new NullReferenceException("Suspect Vehicle");
+                    else if (!_suspectPed) throw new NullReferenceException("Suspect Ped");
+                    else if (!_officerVehicle) throw new NullReferenceException("Officer Vehicle");
+                    else if (!_officerPed) throw new NullReferenceException("Officer Ped");
+                    else throw new InvalidOperationException();
+                }
+                catch (ArgumentException ex)
+                {
+                    Extensions.PrintRecursiveExceptions(ex);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    Extensions.PrintRecursiveExceptions(ex);
+                }
+
                 Game.DisplayNotification("Toasty Callouts has encountered an error, ending the callout to prevent any crashes.");
                 End();
             }
@@ -65,27 +68,6 @@ namespace ToastyCallouts.Callouts
             Functions.PlayScannerAudioUsingPosition("", _sP);
 
             return base.OnBeforeCalloutDisplayed();
-        }
-
-        private void OnAIVisualChanged(object sender, bool val)
-        {
-            if (_status != PlayerPursuitStatus.PLAYER_HAS_VISUAL && !val)
-            {
-                Game.LogTrivial("[TOASTYCALLOUTS PursuitinProgress - DoesAIHaveVisualOnSuspect()]: AI lost visual of suspect, ending callout.");
-                Functions.PlayScannerAudio("HELI_NO_VISUAL_DISPATCH_02 10-4 CODE4");
-                End();
-            }
-        }
-
-        private void OnPlayerVisualChanged(object sender, bool val)
-        {
-            if (!val)
-            {
-                Game.LogTrivial("[TOASTYCALLOUTS PursuitinProgress - DoesAIHaveVisualOnSuspect()]: Player lost visual of suspect, ending callout.");
-
-                //want to check if AI has visual from the other event
-                End();
-            }
         }
 
         public override void OnCalloutDisplayed()
@@ -105,6 +87,7 @@ namespace ToastyCallouts.Callouts
             Functions.AddCopToPursuit(_pursuit, _officerPed);
             Functions.SetPursuitIsActiveForPlayer(_pursuit, true);
             Functions.SetPursuitCopsCanJoin(_pursuit, false);
+            PursuitVisual.Start(_pursuit, true);
 
             _suspectBlip = new Blip(_suspectVehicle)
             {
@@ -114,12 +97,6 @@ namespace ToastyCallouts.Callouts
 
             _suspectBlip.SetStandardColor(CalloutStandardization.BlipTypes.ENEMY);
 
-            if (Extensions.IsEntityVisible(_suspectVehicle))
-            {
-                Game.LogTrivial("[TOASTYCALLOUTS PursuitinProgress - OnCalloutAccepted()]: _suspectVehicle is visible, changing _status to PLAYER_HAS_VISUAL.");
-                _status = PlayerPursuitStatus.PLAYER_HAS_VISUAL;
-            }
-
             return base.OnCalloutAccepted();
         }
 
@@ -127,85 +104,10 @@ namespace ToastyCallouts.Callouts
         {
             if (Game.IsKeyDown(Keys.End)) End();
 
-            switch (_status)
-            {
-                case PlayerPursuitStatus.NONE:
-                    PursuitUpdates();
-                    DoesAIHaveVisualOnSuspect();
-                    _status = PlayerPursuitStatus.PLAYER_HAS_NO_VISUAL;
-
-                    break;
-                case PlayerPursuitStatus.PLAYER_HAS_NO_VISUAL:
-                    if (_suspectPed && Extensions.IsEntityVisible(_suspectPed)) _status = PlayerPursuitStatus.PLAYER_HAS_VISUAL;
-
-                    break;
-                case PlayerPursuitStatus.PLAYER_HAS_VISUAL:
-                    if (_suspectBlip) _suspectBlip.Delete();
-
-                    break;
-            }
-
-            bool AIHasVisualCheck = Extensions.IsEntityVisible(_suspectPed, _officerPed);
-            if (AIHasVisual != AIHasVisualCheck)
-            {
-                AIHasVisual = AIHasVisualCheck;
-                AIVisualChanged?.Invoke(this, AIHasVisual);
-            }
-
-            bool PlayerHasVisualCheck = Extensions.IsEntityVisible(_suspectPed);
-            if (PlayerHasVisual != PlayerHasVisualCheck)
-            {
-                PlayerHasVisual = PlayerHasVisualCheck;
-                PlayerVisualChanged?.Invoke(this, AIHasVisual);
-            }
+            if (Game.IsKeyDown(Keys.F8)) _officerPed.Kill();
+            if (Game.IsKeyDown(Keys.F9)) _suspectVehicle.IsPositionFrozen = true;
 
             base.Process();
-        }
-
-        private void PursuitUpdates()
-        {
-            GameFiber.StartNew(delegate
-            {
-                Game.LogTrivial("[TOASTYCALLOUTS PursuitinProgress - PursuitUpdates()]: Creating stopwatch.");
-
-                Stopwatch timer = new Stopwatch();
-                timer.Start();
-
-                while (true)
-                {
-                    GameFiber.Yield();
-
-                    if (_suspectVehicle && timer.ElapsedMilliseconds >= 10000)
-                    {
-                        timer.Restart();
-                        Functions.PlayScannerAudioUsingPosition("SUSPECT_IS IN_OR_ON_POSITION", _suspectVehicle.Position);
-                    }
-
-                    if (_status == PlayerPursuitStatus.PLAYER_HAS_VISUAL || !Functions.IsPursuitStillRunning(_pursuit))
-                    {
-                        timer.Reset();
-                        break;
-                    }
-                }
-            });
-        }
-
-        private void DoesAIHaveVisualOnSuspect()
-        {
-            GameFiber.StartNew(delegate
-            {
-                while (true)
-                {
-                    GameFiber.Yield();
-
-                    if (_officerPed && _officerVehicle && _status != PlayerPursuitStatus.PLAYER_HAS_VISUAL && !Extensions.IsEntityVisible(_officerVehicle, _suspectVehicle))
-                    {
-                        Game.LogTrivial("[TOASTYCALLOUTS PursuitinProgress - DoesAIHaveVisualOnSuspect()]: AI lost visual of suspect, ending callout.");
-                        Functions.PlayScannerAudio("HELI_NO_VISUAL_DISPATCH_02 10-4 CODE4");
-                        End();
-                    }
-                }
-            });
         }
 
         public override void End()
