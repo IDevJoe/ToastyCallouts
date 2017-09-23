@@ -1,6 +1,7 @@
 ﻿using LSPD_First_Response.Mod.API;
 using Rage;
 using System;
+using System.IO;
 using System.Reflection;
 using ToastyCallouts.Callouts;
 
@@ -8,25 +9,46 @@ namespace ToastyCallouts
 {
     public class Main : Plugin
     {
-        public static Random _rnd = new Random();
+        internal static Version _currentTCVersion = Assembly.GetExecutingAssembly().GetName().Version;
+        internal static Version _currentRPHVersion = Assembly.LoadFile(AssemblyDirectory + "/RAGEPluginHook.exe").GetName().Version;
         internal static Ped Player => Game.LocalPlayer.Character;
+        public static Random _rnd = new Random();
 
         public override void Initialize()
         {
-            Game.LogTrivial("[TOASTY CALLOUTS]: Current version is " + Assembly.GetExecutingAssembly().GetName().Version);
+            Util.Log(string.Format("Current TC version is {0}, and the current RPH version is {1}.", _currentTCVersion, _currentRPHVersion), 1);
             Functions.OnOnDutyStateChanged += OnOnDutyStateChangedHandler;
         }
 
         public override void Finally()
         {
-            Game.LogTrivial("[TOASTY CALLOUTS]: End has been called.");
+            Util.Log("End has been called.", 1);
         }
 
         private static void OnOnDutyStateChangedHandler(bool onDuty)
         {
             if (onDuty)
             {
+                PursuitVisual.WaitForPursuit();
+                RNUIMenu.Main();
+
                 Functions.RegisterCallout(typeof(PursuitinProgress));
+                Functions.RegisterCallout(typeof(PettyTheft));
+
+#if DEBUG
+                //DoStuff
+#endif
+            }
+        }
+
+        public static string AssemblyDirectory
+        {
+            get
+            {
+                string codeBase = Assembly.GetExecutingAssembly().CodeBase;
+                UriBuilder uri = new UriBuilder(codeBase);
+                string path = Uri.UnescapeDataString(uri.Path);
+                return Path.GetDirectoryName(path);
             }
         }
     }
