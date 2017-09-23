@@ -53,8 +53,10 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Callouts\PettyTheft.cs" />
     <Compile Include="Callouts\PursuitinProgress.cs" />
-    <Compile Include="Extensions.cs" />
+    <Compile Include="RNUIMenu.cs" />
+    <Compile Include="Util.cs" />
     <Compile Include="Main.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Spawnpoints.cs" />
