@@ -5,15 +5,15 @@ using Rage.Native;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 
 namespace ToastyCallouts
 {
-    class Extensions
+    static class Util
     {
+        /// <summary>Spawn a police car based on the respective Vector3.</summary>
         public static Vehicle PoliceCar(Vector3 spawnpoint)
         { //police, police2, police3, police4, policeb, sheriff, sheriff2
             Model[] cityCarModels =
@@ -53,9 +53,10 @@ namespace ToastyCallouts
                     break;
             }
 
-            return new Vehicle(MathHelper.Choose(selectCarModels), spawnpoint, ClosestVehicleHeading(spawnpoint));
+            return new Vehicle(MathHelper.Choose(selectCarModels), spawnpoint, Natives.ClosestVehicleHeading(spawnpoint));
         }
 
+        /// <summary>Spawn a police ped based on the respective Vector3.</summary>
         public static Ped PolicePed(Vector3 spawnpoint)
         { //S_M_Y_COP_01, S_F_Y_COP_01, S_M_Y_SHERIFF_01, S_F_Y_SHERIFF_01, CSB_COP, S_M_Y_HWAYCOP_01
             Model[] cityPedModels =
@@ -93,7 +94,297 @@ namespace ToastyCallouts
                     break;
             }
 
-            return new Ped(MathHelper.Choose(selectPedModels), spawnpoint, ClosestVehicleHeading(spawnpoint));
+            return new Ped(MathHelper.Choose(selectPedModels), spawnpoint, Natives.ClosestVehicleHeading(spawnpoint));
+        }
+
+        /// <summary>Check if an entity is visible to another entity. If ent2 is null, ent1 will be in check with the local player.</summary>
+        public static bool IsEntityVisible(Entity ent1, Entity ent2 = null)
+        {
+            HitResult result;
+
+            if (ent2 == null && ent1)
+            {
+                Entity[] entitiesToIgnore = { Main.Player, ent1 };
+                result = World.TraceLine(Main.Player.Position, ent1.Position, TraceFlags.IntersectWorld, entitiesToIgnore);
+
+                return ent1 && !result.Hit;
+            }
+
+            if (ent2 != null && ent1 && ent2)
+            {
+                Entity[] entitiesToIgnore = { Main.Player, ent1, ent2 };
+                result = World.TraceLine(ent1.Position, ent2.Position, TraceFlags.IntersectWorld, entitiesToIgnore);
+
+                return !result.Hit;
+            }
+
+            return true;
+        }
+
+        /// <summary>Write out logs for debugging and information purposes.</summary>
+        /// <param name="text"></param>
+        /// <param name="val">Whether to display..
+        /// <para>0 = DEBUG Log</para>
+        /// <para>1 = INFO Log</para>
+        /// </param>
+        public static void Log(string text, int val)
+        {
+            string logType;
+            switch (val)
+            {
+                case 0: //DEBUG Log
+                    logType = "DEBUG";
+                    break;
+                case 1: //INFO Log
+                    logType = "INFO";
+                    break;
+                default:
+                    logType = "OTHER";
+                    break;
+            }
+
+            Game.LogTrivialDebug(string.Format("[TOASTY CALLOUTS - {0}]: {1}", logType, text));
+        }
+
+        /// <summary>Corrects a vector3 to match the relative ground position.</summary>
+        /// <param name="position">The vector3 to effect.</param>
+        /// <param name="groundLevelIncrement"></param>
+        /// <param name="treatWaterAsGround"></param>
+        /// <param name="anyMeans"></param>
+        public static Vector3 SetOnGround(Vector3 position, float groundLevelIncrement = 0.25f, bool treatWaterAsGround = false, bool anyMeans = true)
+        {
+            var groundZ = World.GetGroundZ(position, false, true);
+            if (groundZ != null) position = new Vector3(position.X, position.Y, (float)groundZ + groundLevelIncrement);
+            return position;
+        }
+
+        /// <summary>Creates a camera 13m above the given entity.</summary>
+        /// <param name="entToSpectate">The entity that you want to spectate.</param>
+        /// <param name="keyForDefaultCam">The key to press to revert back to the normal player camera.</param>
+        public static void SpectateCameraAbove(Entity entToSpectate, Keys keyForDefaultCam)
+        {
+            GameFiber.StartNew(delegate
+            {
+                Camera cam = new Camera(false);
+                if (cam)
+                {
+                    cam.AttachToEntity(entToSpectate, new Vector3(0, 0, 13f), true);
+                    cam.PointAtEntity(entToSpectate, new Vector3(0, 0, 0), true);
+                }
+
+                cam.Active = true;
+
+                while (true)
+                {
+                    GameFiber.Yield();
+
+                    if (Game.IsKeyDown(keyForDefaultCam))
+                    {
+                        if (cam) cam.Delete();
+                        break;
+                    }
+                }
+            });
+        }
+
+        /// <summary>Creates a camera behind the given entity.</summary>
+        /// <param name="entToSpectate">The entity that you want to spectate.</param>
+        /// <param name="keyForDefaultCam">The key to press to revert back to the normal player camera.</param>
+        public static void SpectateCameraNormal(Entity entToSpectate, Keys keyForDefaultCam)
+        {
+            GameFiber.StartNew(delegate
+            {
+                Camera cam = new Camera(false);
+                if (cam)
+                {
+                    cam.AttachToEntity(entToSpectate, new Vector3(0, -5f, 2.5f), true);
+                    cam.PointAtEntity(entToSpectate, new Vector3(0, 0, 0), true);
+                }
+
+                cam.Active = true;
+
+                while (true)
+                {
+                    GameFiber.Yield();
+                    cam.PointAtEntity(entToSpectate, new Vector3(0, 0, 0), true);
+
+                    if (Game.IsKeyDown(keyForDefaultCam))
+                    {
+                        if (cam) cam.Delete();
+                        break;
+                    }
+                }
+            });
+        }
+
+        /// <summary>Creates a toggle system where you can press a key to switch between cameras.</summary>
+        public static void SpectateCameraToggler(Entity entToSpectate1, Entity entToSpectate2 = null)
+        {
+            GameFiber.StartNew(delegate
+            {
+                int currentCamera = 0; //Default, unknown view.
+                Keys defaultCamera = Keys.F7;
+
+                Game.DisplayHelp(string.Format("Click {0} to switch between the spectating camera views, and press {1} to change back to the default camera view.",
+                    FriendlyKeys.GetFriendlyName(Keys.F6), FriendlyKeys.GetFriendlyName(Keys.F7)));
+
+                while (true)
+                {
+                    if (Game.IsKeyDown(Keys.F6))
+                    {
+                        currentCamera++;
+
+                        if (entToSpectate2 == null && entToSpectate1)
+                        {
+                            switch (currentCamera)
+                            {
+                                case 1: //Spectating, normal view.
+                                    SpectateCameraNormal(entToSpectate1, defaultCamera);
+                                    break;
+                                case 2: //Spectating, top view.
+                                    SpectateCameraAbove(entToSpectate1, defaultCamera);
+                                    break;
+                                default: //Invalid view, setting to default player view.
+                                    currentCamera = 0;
+                                    break;
+                            }
+                        }
+
+                        if (entToSpectate2 != null && entToSpectate1 && entToSpectate2)
+                        {
+                            switch (currentCamera)
+                            {
+                                case 1: //Spectating, normal view.
+                                    Util.SpectateCameraNormal(entToSpectate1, defaultCamera);
+                                    break;
+                                case 2: //Spectating, top view.
+                                    Util.SpectateCameraAbove(entToSpectate1, defaultCamera);
+                                    break;
+                                case 3: //Spectating, top view.
+                                    Util.SpectateCameraNormal(entToSpectate2, defaultCamera);
+                                    break;
+                                case 4: //Spectating, top view.
+                                    Util.SpectateCameraAbove(entToSpectate2, defaultCamera);
+                                    break;
+                                default: //Invalid view, setting to default player view.
+                                    currentCamera = 0;
+                                    break;
+                            }
+                        }
+                    }
+
+                    if (Game.IsKeyDown(defaultCamera))
+                    {
+                        currentCamera = 0;
+                    }
+
+                    GameFiber.Yield();
+                }
+            });
+        }
+
+        /// <summary>Makes a vehicle drive at a given speed.</summary>
+        /// <param name="veh">The vehicle to effect.</param>
+        /// <param name="speed">The speed to start the vehicle at.</param>
+        public static void BeginRollingStart(this Vehicle veh, float speed = 45f)
+        {
+            if (veh)
+            {
+                veh.IsEngineStarting = false;
+                veh.IsEngineOn = true;
+                veh.SetForwardSpeed(speed);
+            }
+        }
+
+        public static void PointAnimation(this Ped ped, int timeout)
+        {
+            if (ped)
+            {
+                if (ped.IsMale) ped.Tasks.PlayAnimation("gestures@m@standing@casual", "gesture_point", timeout, 4f, 4f, ped.Heading, AnimationFlags.Loop);
+                else ped.Tasks.PlayAnimation("gestures@f@standing@casual", "gesture_point", timeout, 4f, 4f, ped.Heading, AnimationFlags.Loop);
+            }
+        }
+
+        public static void BlipUpdates(Blip blip, CalloutStandardization.BlipTypes blipType, Entity entToAttachTo, string name, float scale = 100f, float alpha = 0.40f)
+        {
+            GameFiber.StartNew(delegate
+            {
+                if (blip != null)
+                {
+                    blip = new Blip(entToAttachTo)
+                    {
+                        Name = name,
+                        Scale = scale,
+                        Alpha = alpha
+                    };
+
+                    blip.SetStandardColor(blipType);
+                    blip.Flash(10, 10);
+
+                    Stopwatch timer = new Stopwatch();
+                    timer.Start();
+
+                    while (true)
+                    {
+                        GameFiber.Yield();
+
+                        if (Util.IsEntityVisible(entToAttachTo))
+                        {
+                            blip = new Blip(entToAttachTo)
+                            {
+                                Name = name,
+                                IsRouteEnabled = true
+                            };
+
+                            blip.SetBlipScalePed();
+                            blip.SetStandardColor(blipType);
+                            blip.Flash(10, 10);
+                            break;
+                        }
+
+                        if (timer.ElapsedMilliseconds >= 10000)
+                        {
+                            if (blip) blip.Delete();
+
+                            blip = new Blip(entToAttachTo)
+                            {
+                                Name = name + " SEARCH AREA",
+                                Scale = scale,
+                                Alpha = alpha,
+                                IsRouteEnabled = true
+                            };
+
+                            blip.SetStandardColor(blipType);
+                            blip.Flash(10, 10);
+                            timer.Restart();
+                        }
+                    }
+                }
+            });
+        }
+
+        /// <summary>Prints as much detail for an error as possible.</summary>
+        public static void PrintRecursiveExceptions(Exception ex, int i = 0)
+        { //MADE BY PNWPARKSFAN
+            Game.LogTrivial("--------------------");
+            Game.LogTrivial("[TOASTY CALLOUTS - EXCEPTIONS]: ");
+            Game.LogTrivial(ex.Message);
+            Game.LogTrivialDebug(ex.StackTrace);
+            if (ex.InnerException != null && i < 10)
+            {
+                PrintRecursiveExceptions(ex.InnerException, i + 1);
+            }
+        }
+    }
+
+    static class Natives
+    {
+        /// <summary>Sets the vehicles forward speed.</summary>
+        /// <param name="veh">The vehicle to effect.</param>
+        /// <param name="speed">The starting speed.</param>
+        public static void SetForwardSpeed(this Vehicle veh, float speed)
+        {
+            NativeFunction.Natives.xAB54A438726D25D5(veh, speed); //SET_VEHICLE_FORWARD_SPEED
         }
 
         public static float ClosestVehicleHeading(Vector3 pos)
@@ -112,89 +403,34 @@ namespace ToastyCallouts
             return tempCoords;
         }
 
-        public static bool IsEntityVisible(Entity ent)
+        /// <summary>Makes a ped face another ped. Clear the tasks of the ped to stop them from facing pedToFace.</summary>
+        /// <param name="ped">The ped that is going to face pedToFace.</param>
+        /// <param name="pedToFace">The ped that is going to be the one being looked at.</param>
+        public static void FaceEntity(this Ped ped, Ped pedToFace)
         {
-            HitResult result;
-
-            if (ent)
-            {
-                Entity[] entitiesToIgnore = { Main.Player, ent };
-                result = World.TraceLine(Main.Player.Position, ent.Position, TraceFlags.IntersectWorld, entitiesToIgnore);
-            }
-
-            return ent && !result.Hit;
+            NativeFunction.Natives.TASK_TURN_PED_TO_FACE_ENTITY(ped, pedToFace, int.MaxValue);
         }
 
-        public static bool IsEntityVisible(Entity ent, Entity ent2)
+        public static void PlaceObjectOnGroundProperly(this Rage.Object obj)
         {
-            Entity[] entitiesToIgnore = { Main.Player, ent, ent2 };
-            HitResult result = World.TraceLine(ent.Position, ent2.Position, TraceFlags.IntersectWorld, entitiesToIgnore);
-
-            return ent && ent2 && !result.Hit;
+            NativeFunction.Natives.PLACE_OBJECT_ON_GROUND_PROPERLY(obj);
         }
 
-        public static void DebugLog(string text)
+        public static bool IsPlayerFreeAimingAtEntity(Entity entity)
         {
-            Game.LogTrivialDebug("[TOASTY CALLOUTS - DEBUG]: " + text);
+            return NativeFunction.Natives.IS_PLAYER_FREE_AIMING_AT_ENTITY<bool>(Game.LocalPlayer, entity);
         }
+    }
 
-        public static Vector3 SetOnGround(Vector3 position, float groundLevelIncrement = 0.25f, bool treatWaterAsGround = false, bool anyMeans = true)
-        {
-            var groundZ = World.GetGroundZ(position, false, true);
-            if (groundZ != null) position = new Vector3(position.X, position.Y, (float)groundZ + groundLevelIncrement);
-            return position;
-        }
-
-        public static void SpectateCameraAbove(Entity entToSpectate)
-        {
-            GameFiber.StartNew(delegate
-            {
-                Camera cam = new Camera(true);
-                cam.AttachToEntity(entToSpectate, new Vector3(0, 0, 13f), true);
-                cam.PointAtEntity(entToSpectate, new Vector3(0, 0, 0), true);
-
-                while (true)
-                {
-                    GameFiber.Yield();
-
-                    if (Game.IsKeyDown(Keys.D9))
-                    {
-                        if (cam) cam.Delete();
-                        break;
-                    }
-                }
-            });
-        }
-
-        public static void SpectateCameraNormal(Entity entToSpectate)
-        {
-            GameFiber.StartNew(delegate
-            {
-                Camera cam = new Camera(true);
-                cam.AttachToEntity(entToSpectate, new Vector3(0, -5f, 2.5f), true);
-                cam.PointAtEntity(entToSpectate, new Vector3(0, 0, 0), true);
-
-                while (true)
-                {
-                    GameFiber.Yield();
-                    cam.PointAtEntity(entToSpectate, new Vector3(0, 0, 0), true);
-
-                    if (Game.IsKeyDown(Keys.D9))
-                    {
-                        if (cam) cam.Delete();
-                        break;
-                    }
-                }
-            });
-        }
-
-        public static void EndAndClean(Entity[] entities, Blip[] blips = null, LHandle[] pursuits = null)
+    static class Cleaning
+    {
+        public static void EndAndClean(Entity[] entities, Blip[] blips = null, LHandle[] pursuits = null, Checkpoint[] checkpoints = null)
         {
             foreach (Entity ent in entities)
             {
                 if (ent)
                 {
-                    if (!IsEntityVisible(ent)) ent.Delete();
+                    if (!Util.IsEntityVisible(ent)) ent.Delete();
                     else ent.Dismiss();
                 }
             }
@@ -220,39 +456,105 @@ namespace ToastyCallouts
                     }
                 }
             }
+
+            if (checkpoints != null)
+            {
+                foreach (Checkpoint checkpoint in checkpoints)
+                {
+                    if (checkpoint)
+                    {
+                        checkpoint.Delete();
+                    }
+                }
+            }
         }
 
-        public static void PrintRecursiveExceptions(Exception ex, int i = 0)
-        { //MADE BY PNWPARKSFAN
-            Game.LogTrivial("--------------------");
-            Game.LogTrivial("[TOASTY CALLOUTS - EXCEPTIONS]: ");
-            Game.LogTrivial(ex.Message);
-            Game.LogTrivialDebug(ex.StackTrace);
-            if (ex.InnerException != null && i < 10)
+        public static void CatchInvalidObjects(Entity[] entities = null, Blip[] blips = null)
+        {
+            try
             {
-                PrintRecursiveExceptions(ex.InnerException, i + 1);
+                if (entities != null)
+                {
+                    foreach (Entity ent in entities)
+                    {
+                        if (!ent) throw new NullReferenceException(ent.Model.Name);
+                        else throw new InvalidOperationException();
+                    }
+                }
+
+                if (blips != null)
+                {
+                    foreach (Blip blip in blips)
+                    {
+                        if (!blip) throw new NullReferenceException(blip.Name);
+                        else throw new InvalidOperationException();
+                    }
+                }
+
+                Game.DisplayNotification("Toasty Callouts has encountered an error, ending the callout to prevent any crashes.");
+            }
+            catch (ArgumentException ex)
+            {
+                Util.PrintRecursiveExceptions(ex);
+            }
+            catch (InvalidOperationException ex)
+            {
+                Util.PrintRecursiveExceptions(ex);
             }
         }
     }
 
-    public class PursuitVisual
+    class PursuitVisual
     {
         private static event EventHandler<bool> AIVisualChanged, PlayerVisualChanged;
-        public static bool _aiHasVisual, _aiHasVisualCheck, _playerHasVisual, _playerHasVisualCheck;
+        public static bool _aiHasVisual, _aiHasVisualCheck, _playerHasVisual, _playerHasVisualCheck, _reached, _endCalloutWhenFinished = true;
         private static Ped[] _suspectPeds = null;
         private static Ped[] _officerPeds = null;
         private static PursuitVisual _aiVisual, _playerVisual;
 
-        public static void Start(LHandle pursuit, bool endCalloutWhenFinished)
+        public static void WaitForPursuit()
+        {
+            GameFiber.StartNew(delegate
+            {
+                bool once = false;
+
+                while (true)
+                {
+                    if (once && Functions.GetActivePursuit() == null)
+                    {
+                        Util.Log("Setting once to false, as there is no longer an active pursuit.", 0);
+                        once = false;
+                    }
+
+                    if (!once && Functions.IsCalloutRunning() && Functions.GetActivePursuit() != null)
+                    {
+                        Util.Log("Pursuit active, starting pursuit visual's functions.", 0);
+                        LHandle pursuit = Functions.GetActivePursuit();
+                        Start(pursuit);
+
+                        once = true;
+                    }
+
+                    GameFiber.Yield();
+                }
+            });
+        }
+
+        public static void Start(LHandle pursuit)
         {
             GameFiber.StartNew(delegate
             { //AI cops' visual seems to not matter when starting timer.
                 if (pursuit != null && Functions.IsPursuitStillRunning(pursuit))
                 {
-                    string[] policePedModels = { "S_M_Y_COP_01", "S_F_Y_COP_01", "S_M_Y_SHERIFF_01", "S_F_Y_SHERIFF_01", "CSB_COP", "S_M_Y_HWAYCOP_01" };
+                    //string[] policePedModels = { "S_M_Y_COP_01", "S_F_Y_COP_01", "S_M_Y_SHERIFF_01", "S_F_Y_SHERIFF_01", "CSB_COP", "S_M_Y_HWAYCOP_01" };
 
-                    _suspectPeds = Functions.GetPursuitPeds(pursuit).Where(x => !policePedModels.Contains(x.Model.Name) && !x.IsLocalPlayer).ToArray();
-                    _officerPeds = Functions.GetPursuitPeds(pursuit).Where(x => policePedModels.Contains(x.Model.Name) && !x.IsLocalPlayer).ToArray();
+                    _suspectPeds = Functions.GetPursuitPeds(pursuit).Where(x => !(x.Model.Name == "S_M_Y_COP_01" || x.Model.Name == "S_F_Y_COP_01" ||
+                                     x.Model.Name == "S_M_Y_SHERIFF_01" || x.Model.Name == "S_F_Y_SHERIFF_01" ||
+                                     x.Model.Name == "CSB_COP" || x.Model.Name == "S_M_Y_HWAYCOP_01") && !x.IsLocalPlayer).ToArray();
+
+                    _officerPeds = Functions.GetPursuitPeds(pursuit).Where(x => (x.Model.Name == "S_M_Y_COP_01" || x.Model.Name == "S_F_Y_COP_01" ||
+                                     x.Model.Name == "S_M_Y_SHERIFF_01" || x.Model.Name == "S_F_Y_SHERIFF_01" ||
+                                     x.Model.Name == "CSB_COP" || x.Model.Name == "S_M_Y_HWAYCOP_01") && !x.IsLocalPlayer).ToArray();
                 }
 
                 AIVisualChanged += (object sender, bool aiVisualStatus) =>
@@ -261,12 +563,17 @@ namespace ToastyCallouts
 
                     if (aiVisualStatus)
                     {
-                        Extensions.DebugLog("AI has visual.");
+                        Util.Log("AI has visual.", 0);
                     }
 
-                    if (!aiVisualStatus)
+                    if (_reached && !aiVisualStatus && !_playerHasVisualCheck)
                     {
-                        Extensions.DebugLog("AI does not have visual.");
+                        Util.Log("AI and player do not have visual.", 0);
+                        StartTimer();
+                    }
+                    else if (!aiVisualStatus && _playerHasVisualCheck)
+                    {
+                        Util.Log("AI does not have visual, but player does have visual.", 0);
                     }
                 };
 
@@ -276,17 +583,17 @@ namespace ToastyCallouts
 
                     if (playerVisualStatus)
                     {
-                        Extensions.DebugLog("Player has visual.");
+                        Util.Log("Player has visual.", 0);
                     }
 
-                    if (!playerVisualStatus && !_aiHasVisualCheck)
+                    if (_reached && !playerVisualStatus && !_aiHasVisualCheck)
                     {
-                        Extensions.DebugLog("Player and AI does not have visual.");
+                        Util.Log("Player and AI do not have visual.", 0);
                         StartTimer();
                     }
                     else if (!playerVisualStatus && _aiHasVisualCheck)
                     {
-                        Extensions.DebugLog("Player does not have visual, but AI does have visual.");
+                        Util.Log("Player does not have visual, but AI does have visual.", 0);
                         PursuitUpdates();
                     }
                 };
@@ -302,7 +609,11 @@ namespace ToastyCallouts
                         {
                             foreach (var officerPed in _officerPeds)
                             {
-                                if (suspectPed && officerPed) _aiHasVisualCheck = Extensions.IsEntityVisible(suspectPed, officerPed);
+                                if (suspectPed && officerPed)
+                                {
+                                    _reached = true;
+                                    _aiHasVisualCheck = Util.IsEntityVisible(suspectPed, officerPed);
+                                }
                             }
                             GameFiber.Yield();
                         }
@@ -318,7 +629,7 @@ namespace ToastyCallouts
                     {
                         foreach (var suspectPed in _suspectPeds)
                         {
-                            if (suspectPed) _playerHasVisualCheck = Extensions.IsEntityVisible(suspectPed);
+                            if (suspectPed) _playerHasVisualCheck = Util.IsEntityVisible(suspectPed);
                         }
                     }
 
@@ -328,16 +639,16 @@ namespace ToastyCallouts
                         PlayerVisualChanged?.Invoke(_playerVisual, _playerHasVisual);
                     }
 
-                    if (endCalloutWhenFinished && pursuit != null && !Functions.IsPursuitStillRunning(pursuit))
+                    if (_endCalloutWhenFinished && pursuit != null && !Functions.IsPursuitStillRunning(pursuit))
                     {
-                        Extensions.DebugLog("No pursuit active, ending callout.");
+                        Util.Log("No pursuit active, ending callout.", 0);
                         if (Functions.IsCalloutRunning()) Functions.StopCurrentCallout();
                         break;
                     }
 
                     if (pursuit != null && !Functions.IsPursuitStillRunning(pursuit))
                     {
-                        Extensions.DebugLog("No pursuit active.");
+                        Util.Log("No pursuit active.", 0);
                         break;
                     }
                 }
@@ -348,7 +659,7 @@ namespace ToastyCallouts
         {
             GameFiber.StartNew(delegate
             {
-                Extensions.DebugLog("Starting timer.");
+                Util.Log("Starting timer.", 0);
                 Stopwatch timer = new Stopwatch();
                 timer.Start();
 
@@ -358,7 +669,7 @@ namespace ToastyCallouts
 
                     if (!_playerHasVisualCheck && !_aiHasVisualCheck && timer.ElapsedMilliseconds >= 10000)
                     {
-                        Extensions.DebugLog("Time exceeded and no visual has been made, ending pursuit.");
+                        Util.Log("Time exceeded and no visual has been made, ending pursuit.", 0);
                         Functions.PlayScannerAudio("HELI_NO_VISUAL_DISPATCH_02 10-4 CODE4");
 
                         LHandle pursuit = Functions.GetActivePursuit();
@@ -368,7 +679,7 @@ namespace ToastyCallouts
 
                     if (_playerHasVisualCheck || _aiHasVisualCheck)
                     {
-                        Extensions.DebugLog("Resetting timer, visual was made.");
+                        Util.Log("Resetting timer, visual was made.", 0);
                         timer.Reset();
                         break;
                     }
@@ -415,6 +726,204 @@ namespace ToastyCallouts
         }
     }
 
+    struct ConversationLine
+    {
+        public enum PedsName
+        {
+            SUSPECT,
+            LOCALPLAYER,
+            OFFICER,
+            FIREFIGHTER,
+            PARAMEDICS,
+            ANIMALCONTROL,
+            VICTIM,
+            WITNESS
+        };
+        public PedsName _pedsName;
+
+        public bool _showVariants; //if true it'll display Option1:, Option2: for the player
+        public string[] _lineVariants; //if ShowVariants == true - contains options, otherwise a set of lines to get a random one and display
+        public int _subtitleTimeout;
+        public bool _repeatFirstVariant;
+    }
+
+    class Conversation
+    {
+        public int CurrentLine { get; set; }
+        public bool HasFinished { get; set; }
+        public bool Pause { get; set; }
+
+        private ConversationLine[] _lines;
+        private GameFiber _fiber;
+        private string _pedsNameAsString;
+
+        public Conversation(ConversationLine[] lines)
+        {
+            this._lines = lines;
+        }
+
+        public void Start()
+        {
+            _fiber = GameFiber.StartNew(Process);
+        }
+
+        private void Process()
+        {
+            while (true)
+            {
+                GameFiber.Yield();
+
+                if ((CurrentLine == _lines.Length) || (HasFinished) || (!Functions.IsCalloutRunning()))
+                {
+                    Util.Log("Conversation has finished.", 0);
+                    HasFinished = true;
+                    break;
+                }
+
+                if (Pause) continue;
+
+                //if (!(Main.KeyPressCheck(Settings._talkKeyModifier, Settings._talkKey) || Game.IsKeyDown(Settings._talkKeyOption1) || Game.IsKeyDown(Settings._talkKeyOption2) || Game.IsKeyDown(Settings._talkKeyOption3))) continue;
+
+                var current = _lines[CurrentLine];
+
+                string lineToDisplay;
+
+                switch (current._pedsName)
+                {
+                    case ConversationLine.PedsName.SUSPECT:
+                        _pedsNameAsString = "~r~Suspect";
+                        break;
+                    case ConversationLine.PedsName.LOCALPLAYER:
+                        _pedsNameAsString = string.Format("~b~Officer {0}", "Toasty");
+                        break;
+                    case ConversationLine.PedsName.OFFICER:
+                        _pedsNameAsString = "~b~Other Officer";
+                        break;
+                    case ConversationLine.PedsName.FIREFIGHTER:
+                        _pedsNameAsString = "~g~Firefighter";
+                        break;
+                    case ConversationLine.PedsName.PARAMEDICS:
+                        _pedsNameAsString = "~g~Paramedics";
+                        break;
+                    case ConversationLine.PedsName.ANIMALCONTROL:
+                        _pedsNameAsString = "~g~Animal Control";
+                        break;
+                    case ConversationLine.PedsName.VICTIM:
+                        _pedsNameAsString = "~o~Victim";
+                        break;
+                    case ConversationLine.PedsName.WITNESS:
+                        _pedsNameAsString = "~o~Witness";
+                        break;
+                    default:
+                        _pedsNameAsString = "~y~Unkown";
+                        break;
+                }
+
+                if (current._showVariants)
+                {
+                    if (current._lineVariants.Length == 3)
+                    {
+                        Util.Log("Length is equal to 3.", 0);
+                        lineToDisplay = SayOptionChoice(current._lineVariants[0], current._lineVariants[1], current._lineVariants[2]);
+                    }
+                    else if (current._lineVariants.Length < 3)
+                    {
+                        Util.Log("Length is less than 3.", 0);
+                        lineToDisplay = SayOptionChoice(current._lineVariants[0], current._lineVariants[1]);
+                    }
+                    else
+                    {
+                        if (Functions.IsCalloutRunning()) Functions.StopCurrentCallout();
+                        Game.DisplayNotification("Toasty Callouts has encountered an error, ending the callout to prevent any crashes.");
+                        break;
+                    }
+
+                    if (!(Game.IsKeyDown(Keys.NumPad7) || Game.IsKeyDown(Keys.NumPad8) || Game.IsKeyDown(Keys.NumPad9))) continue;
+
+                    if (current._repeatFirstVariant)
+                    {
+                        //repeat the first variant.
+                    }
+                }
+                else
+                {
+                    lineToDisplay = MathHelper.Choose<string>(current._lineVariants);
+
+                    if (!Game.IsKeyDown(Keys.T)) continue;
+                }
+
+                if (current._subtitleTimeout == 0)
+                {
+                    current._subtitleTimeout = int.MaxValue;
+                }
+
+                Game.DisplaySubtitle("~h~" + _pedsNameAsString + ": " + lineToDisplay, current._subtitleTimeout);
+
+                if (_lines.Length - 1 == CurrentLine)
+                {
+                    CurrentLine++;
+                    break;
+                }
+                else CurrentLine++;
+            }
+        }
+
+        private string SayOptionChoice(string option1, string option2, string option3 = null)
+        {
+            if (option3 == null)
+            {
+                Game.DisplayHelp(string.Format("~h~Choose a line to say:~n~ {0}, {1}.",
+                    "Press <font color=\"#F0D732\">" + FriendlyKeys.GetFriendlyName(Keys.NumPad7) + "</font> for <font color=\"#0FC80F\">Option 1: " + option1 + "</font>~n~",
+                    "Press <font color=\"#F0D732\">" + FriendlyKeys.GetFriendlyName(Keys.NumPad8) + "</font> for <font color=\"#0AE60A\">Option 2: " + option2 + " </font>"));
+            }
+            else
+            {
+                Game.DisplayHelp(string.Format("~h~Choose a line to say:~n~ {0}, {1}, {2}.",
+                    "Press <font color=\"#F0D732\">" + FriendlyKeys.GetFriendlyName(Keys.NumPad7) + "</font> for <font color=\"#0FC80F\">Option 1: " + option1 + "</font>~n~",
+                    "Press <font color=\"#F0D732\">" + FriendlyKeys.GetFriendlyName(Keys.NumPad8) + "</font> for <font color=\"#0AE60A\">Option 2: " + option2 + " </font>~n~",
+                    "Press <font color=\"#F0D732\">" + FriendlyKeys.GetFriendlyName(Keys.NumPad9) + "</font> for <font color=\"#0AE60A\">Option 2: " + option3 + " </font>~n~"));
+            }
+
+            while (true)
+            {
+                if (Game.IsKeyDown(Keys.NumPad7))
+                {
+                    Game.HideHelp();
+
+                    /*if (Settings._talkKeyModifier == Keys.None)*/
+                    Game.DisplayHelp("Press <font color=\"#F0D732\">" + FriendlyKeys.GetFriendlyName(Keys.T) + "</font> to continue the conversation.");
+                    //else Game.DisplayHelp("Press <font color=\"#F0D732\">" + Settings._talkKeyModifier + " + " + Settings._talkKey + "</font> to continue the conversation.");
+
+                    return option1;
+                }
+
+                if (Game.IsKeyDown(Keys.NumPad8))
+                {
+                    Game.HideHelp();
+
+                    /*if (Settings._talkKeyModifier == Keys.None) */
+                    Game.DisplayHelp("Press <font color=\"#F0D732\">" + FriendlyKeys.GetFriendlyName(Keys.T) + "</font> to continue the conversation.");
+                    //else Game.DisplayHelp("Press <font color=\"#F0D732\">" + Settings._talkKeyModifier + " + " + Settings._talkKey + "</font> to continue the conversation.");
+
+                    return option2;
+                }
+
+                if (option3 != null && Game.IsKeyDown(Keys.NumPad9))
+                {
+                    Game.HideHelp();
+
+                    /*if (Settings._talkKeyModifier == Keys.None) */
+                    Game.DisplayHelp("Press <font color=\"#F0D732\">" + FriendlyKeys.GetFriendlyName(Keys.T) + "</font> to continue the conversation.");
+                    //else Game.DisplayHelp("Press <font color=\"#F0D732\">" + Settings._talkKeyModifier + " + " + Settings._talkKey + "</font> to continue the conversation.");
+
+                    return option3;
+                }
+
+                GameFiber.Yield();
+            }
+        }
+    }
+
     public static class CalloutStandardization
     { //MADE BY FISKEY111, EDITED BY LTFLASH
         /// <summary>
@@ -443,8 +952,6 @@ namespace ToastyCallouts
         }
     }
 
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    [SuppressMessage("ReSharper", "ConvertPropertyToExpressionBody")]
     public static class Scenarios
     { //MADE BY PNWPARKSFAN
 #pragma warning disable 1591
@@ -666,6 +1173,42 @@ namespace ToastyCallouts
         public int Reserved { get; private set; }
         public int Handle { get; private set; }
 
+        /// <summary>
+        /// Create a new checkpoint in-game.
+        /// </summary>
+        /// <param name="position">Where the checkpoint should sit.</param>
+        /// <param name="color">The color of the checkpoint.</param>
+        /// <param name="radius">The radius of the checkpoint.</param>
+        /// <param name="height">How tall the checkpoint should be.</param>
+        /// <param name="type">
+        /// The type of the checkpoint.
+        /// <para>0-4---------Cylinder: 1 arrow, 2 arrow, 3 arrows, CycleArrow, Checker</para>
+        /// <para>5-9---------Cylinder: 1 arrow, 2 arrow, 3 arrows, CycleArrow, Checker</para>
+        /// <para>10-14-------Ring: 1 arrow, 2 arrow, 3 arrows, CycleArrow, Checker</para>
+        /// <para>15-19-------1 arrow, 2 arrow, 3 arrows, CycleArrow, Checker </para>
+        /// <para>20-24-------Cylinder: 1 arrow, 2 arrow, 3 arrows, CycleArrow, Checker </para>
+        /// <para>25-29-------Cylinder: 1 arrow, 2 arrow, 3 arrows, CycleArrow, Checker</para>
+        /// <para>30-34-------Cylinder: 1 arrow, 2 arrow, 3 arrows, CycleArrow, Checker</para>
+        /// <para>35-38-------Ring: Airplane Up, Left, Right, UpsideDown</para>
+        /// <para>39----------?</para>
+        /// <para>40----------Ring: just a ring</para>
+        /// <para>41----------?</para>
+        /// <para>42-44-------Cylinder w/ number(uses 'reserved' parameter)</para>
+        /// <para>45-47-------Cylinder no arrow or number</para>
+        /// </param>
+        /// <param name="reserved">For types 42-44, reserved sets the number and shape to display.
+        /// <para>0-99------------Just numbers (0-99)</para>
+        /// <para>100-109-----------------Arrow (0-9)</para>
+        /// <para>110-119------------Two arrows (0-9)</para>
+        /// <para>120-129----------Three arrows (0-9)</para>
+        /// <para>130-139----------------Circle (0-9)</para>
+        /// <para>140-149------------CycleArrow (0-9)</para>
+        /// <para>150-159----------------Circle (0-9)</para>
+        /// <para>160-169----Circle w/ pointer (0-9)</para>
+        /// <para>170-179-------Perforated ring (0-9)</para>
+        /// <para>180-189----------------Sphere (0-9)</para>
+        /// </param>
+        /// <param name="setOnGround">Whether to set the checkpoint on the ground or not.</param>
         public Checkpoint(Vector3 position, Color color, float radius, float height, int type = 47, int reserved = 0, bool setOnGround = true)
         {
             this.Type = type;
@@ -705,7 +1248,7 @@ namespace ToastyCallouts
             Vector3 placePosition = Position;
             if (_setOnGround)
             {
-                placePosition = Extensions.SetOnGround(Position);
+                placePosition = Util.SetOnGround(Position);
             }
 
             try
