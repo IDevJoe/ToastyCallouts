@@ -152,10 +152,10 @@ namespace ToastyCallouts.Callouts
                     _pedName = Conversations.ConversationLine.PedName.VICTIM,
                     _lineVariants = new string[]
                     {
-                        string.Format("Yeah, I believe it was {0}.", _cashAmount),
-                        string.Format("Yeah, it was around {0}.", _cashAmount),
-                        string.Format("I think it was about {0}.", _cashAmount),
-                        string.Format("Yeah, it should be about {0}.", _cashAmount),
+                        string.Format("Yeah, I believe it was ${0}.", _cashAmount),
+                        string.Format("Yeah, it was around ${0}.", _cashAmount),
+                        string.Format("I think it was about ${0}.", _cashAmount),
+                        string.Format("Yeah, it should be about ${0}.", _cashAmount),
                     }
                 },
                 new Conversations.ConversationLine()
