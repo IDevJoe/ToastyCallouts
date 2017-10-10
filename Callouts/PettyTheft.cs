@@ -215,6 +215,7 @@ namespace ToastyCallouts.Callouts
                         if (_victimBlip) _victimBlip.Delete();
 
                         _progressionState = Progression.FLEE;
+                        _victimPed.MakePersistent(); // Hopefully fixes #5
                     }
                 }
             };
@@ -248,7 +249,7 @@ namespace ToastyCallouts.Callouts
                 {
                     Color = Color.Red
                 };
-                _suspectBlip.Flash(10, 10);
+                _suspectBlip.Flash(50, -1);
                 Game.DisplayHelp("Arrest the suspect.");
 
                 _progressionState = Progression.SUSPECT_APPREHENDED;
@@ -256,6 +257,8 @@ namespace ToastyCallouts.Callouts
 
             if (_progressionState == Progression.SUSPECT_APPREHENDED && _suspectPed && _suspectPed.IsCuffed)
             {
+                _suspectBlip.StopFlashing();
+                _suspectBlip.Delete();
                 _foundMoneyOnSuspect = MathHelper.GetRandomInteger(2) == 0;
                 Game.DisplayHelp(string.Format("Press {0} to search the suspect for the victim's money.", FriendlyKeys.GetFriendlyName(Keys.Y)));
                 _progressionState = Progression.SEARCH_SUSPECT;
@@ -278,7 +281,8 @@ namespace ToastyCallouts.Callouts
 
         public override void End()
         {
-            Cleaning.EndAndClean(new Entity[] { _victimPed, _suspectPed, _moneyObject }, new Blip[] { _victimBlip, _suspectBlip, _moneyBlip }, new LHandle[] {}, new Checkpoint[] { _moneyCheckpoint });
+            Cleaning.EndAndClean(new Entity[] { _victimPed, _moneyObject }, new Blip[] { _victimBlip, _suspectBlip, _moneyBlip }, new LHandle[] {}, new Checkpoint[] { _moneyCheckpoint });
+            if (_suspectPed.IsValid()) _suspectPed.IsPersistent = false;
 
             base.End();
         }
@@ -301,6 +305,17 @@ namespace ToastyCallouts.Callouts
 
                 _moneyObject.IsVisible = false;
                 Game.DisplayNotification(string.Format("You picked up ~p~${0}~s~.", _cashAmount));
+            }
+
+            if (!_victimPed.IsValid())
+            {
+                // Victim despawned.
+                Game.DisplayNotification(
+                    "Dispatch: The suspect has stopped by the station and agreed to pick it up after patrol.");
+                Game.DisplayNotification(string.Format("{0}: 10-4. Scene is now code 4, one in custody.",
+                    Settings._UnitNum));
+                Game.DisplayNotification("Dispatch: 10-4. All assigned units are now 10-8.");
+                return;
             }
 
             _victimBlip = new Blip(_victimPed)
