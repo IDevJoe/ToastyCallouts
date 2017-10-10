@@ -60,6 +60,7 @@
     <Compile Include="Main.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Spawnpoints.cs" />
+    <Compile Include="Utilities\Conversations.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".gitignore" />
