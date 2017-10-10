@@ -56,11 +56,15 @@
     <Compile Include="Callouts\PettyTheft.cs" />
     <Compile Include="Callouts\PursuitinProgress.cs" />
     <Compile Include="RNUIMenu.cs" />
+    <Compile Include="Settings.cs" />
     <Compile Include="Util.cs" />
     <Compile Include="Main.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Spawnpoints.cs" />
+    <Compile Include="Utilities\Cameras.cs" />
     <Compile Include="Utilities\Conversations.cs" />
+    <Compile Include="Utilities\FriendlyKeys.cs" />
+    <Compile Include="Utilities\Timing.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".gitignore" />

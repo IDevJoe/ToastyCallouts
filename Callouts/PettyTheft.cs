@@ -388,6 +388,17 @@ namespace ToastyCallouts.Callouts
                                 {
                                     "Alright yeah that is how much we found on him, here you go.",
                                     "Yep that is how much he had on him, here you go."
+                                },
+                                _afterLine = delegate
+                                {
+                                    Main.Player.Tasks.GoStraightToPosition(_victimPed.GetOffsetPositionFront(2f), 2f, _victimPed.Heading / -1, 1f, 10000).WaitForCompletion(10000);
+                                    _moneyObject.IsVisible = true;
+                                    Main.Player.FaceEntity(_victimPed);
+
+                                    Main.Player.Tasks.PlayAnimation("random@mugging4", "return_wallet_positive_b_player", 4f, AnimationFlags.UpperBodyOnly | AnimationFlags.SecondaryTask).WaitForCompletion(2000);
+                                    _moneyObject.IsVisible = false;
+                                    Main.Player.Tasks.Clear();
+                                    End();
                                 }
                             }
                         };
@@ -395,18 +406,6 @@ namespace ToastyCallouts.Callouts
                         _conversation2 = new Conversations.Conversation(conversation2Lines);
                         _conversation2.Start();
                         _progressionState = Progression.RETURN_MONEY_ANIM;
-                    }
-
-                    if (_progressionState == Progression.RETURN_MONEY_ANIM)
-                    {
-                        Main.Player.Tasks.GoStraightToPosition(_victimPed.GetOffsetPositionFront(2f), 2f, _victimPed.Heading / -1, 1f, 10000).WaitForCompletion(10000);
-                        _moneyObject.IsVisible = true;
-                        Main.Player.FaceEntity(_victimPed);
-
-                        Main.Player.Tasks.PlayAnimation("random@mugging4", "return_wallet_positive_b_player", 4f, AnimationFlags.UpperBodyOnly | AnimationFlags.SecondaryTask).WaitForCompletion(2000);
-                        _moneyObject.IsVisible = false;
-                        Main.Player.Tasks.Clear();
-                        End();
                     }
                 }
             });
