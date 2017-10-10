@@ -94,6 +94,7 @@ namespace ToastyCallouts.Utilities
                     Util.Log("Conversation has finished.", 0);
                     IsFinished = true;
                     Timing.Tick -= Process;
+                    return;
                 }
 
                 var current = _lines[CurrentLine];

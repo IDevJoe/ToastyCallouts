@@ -176,22 +176,6 @@ namespace ToastyCallouts.Callouts
                         "It happened too fast, all I can remember is that he was a white male."
                     }
                 },
-                new Conversations.ConversationLine() //1 --> 2
-                { //7
-                    _pedName = Conversations.ConversationLine.PedName.LOCALPLAYER,
-                    _lineVariants = new string[]
-                    {
-                        "Do you remember what the suspect looked like?" //2
-                    }
-                },
-                new Conversations.ConversationLine() //2 --> 1
-                { //8
-                    _pedName = Conversations.ConversationLine.PedName.LOCALPLAYER,
-                    _lineVariants = new string[]
-                    {
-                        "Alright, do you remember about how much cash they took from you?"
-                    }
-                },
                 new Conversations.ConversationLine()
                 { //9
                     _pedName = Conversations.ConversationLine.PedName.LOCALPLAYER,
@@ -260,20 +244,33 @@ namespace ToastyCallouts.Callouts
                 _moneyObject.PlaceObjectOnGroundProperly();
                 if (_suspectBlip) _suspectBlip.Delete();
 
-                _pursuit = Functions.CreatePursuit();
-                Functions.AddPedToPursuit(_pursuit, _suspectPed);
-                Functions.SetPursuitIsActiveForPlayer(_pursuit, true);
+                _suspectBlip = new Blip(_suspectPed)
+                {
+                    Color = Color.Red
+                };
+                _suspectBlip.Flash(10, 10);
+                Game.DisplayHelp("Arrest the suspect.");
 
                 _progressionState = Progression.SUSPECT_APPREHENDED;
             }
 
-            if (_progressionState == Progression.SUSPECT_APPREHENDED && _suspectPed && !Functions.IsPursuitStillRunning(_pursuit))
+            if (_progressionState == Progression.SUSPECT_APPREHENDED && _suspectPed && _suspectPed.IsCuffed)
             {
                 _foundMoneyOnSuspect = MathHelper.GetRandomInteger(2) == 0;
                 Game.DisplayHelp(string.Format("Press {0} to search the suspect for the victim's money.", FriendlyKeys.GetFriendlyName(Keys.Y)));
-                SearchSuspectForMoney();
-
                 _progressionState = Progression.SEARCH_SUSPECT;
+            }
+            if (_progressionState == Progression.SEARCH_SUSPECT)
+            {
+                SearchSuspectForMoney();
+            }
+            if (_progressionState == Progression.LOCATE_MONEY)
+            {
+                locateMoney();
+            }
+            if (_progressionState == Progression.RETURN_MONEY_CONVERSATION_START)
+            {
+                returnMoney();
             }
 
             base.Process();
@@ -281,134 +278,136 @@ namespace ToastyCallouts.Callouts
 
         public override void End()
         {
-            Cleaning.EndAndClean(new Entity[] { _victimPed, _suspectPed, _moneyObject }, new Blip[] { _victimBlip, _suspectBlip, _moneyBlip }, new LHandle[] { _pursuit }, new Checkpoint[] { _moneyCheckpoint });
+            Cleaning.EndAndClean(new Entity[] { _victimPed, _suspectPed, _moneyObject }, new Blip[] { _victimBlip, _suspectBlip, _moneyBlip }, new LHandle[] {}, new Checkpoint[] { _moneyCheckpoint });
 
             base.End();
         }
 
-        private void SearchSuspectForMoney()
+        private void locateMoney()
         {
-            GameFiber.StartNew(delegate
+            if (Main.Player.DistanceTo2D(_moneyObject) > 10f) return;
+            Game.DisplayHelp(string.Format("Press {0} to pickup the victim's money.", FriendlyKeys.GetFriendlyName(Keys.Y)), true);
+
+            if (Game.IsKeyDown(Keys.Y))
             {
-                while (true)
-                {
-                    GameFiber.Yield();
+                int rightHandBoneIndex = NativeFunction.Natives.GET_PED_BONE_INDEX<int>(Game.LocalPlayer.Character, 28422);
+                Main.Player.Tasks.GoStraightToPosition(_moneyObject.GetOffsetPositionFront(2f), 2f, _moneyObject.Heading, 1f, 10000).WaitForCompletion(10000);
 
-                    if (Game.IsKeyDown(Keys.Y) && Main.Player.DistanceTo2D(_suspectPed) <= 10f)
+                Game.LocalPlayer.Character.Tasks.PlayAnimation("random@mugging4", "pickup_low", 4f, AnimationFlags.None);
+                GameFiber.Sleep(500);
+                _moneyObject.AttachTo(Main.Player, rightHandBoneIndex, _rightHandHoldingCashPileVector3, _rightHandHoldingCashPileRotator);
+                GameFiber.Sleep(1000);
+                NativeFunction.Natives.PLAY_SOUND_FRONTEND(-1, "PICK_UP", "HUD_FRONTEND_DEFAULT_SOUNDSET", 1);
+
+                _moneyObject.IsVisible = false;
+                Game.DisplayNotification(string.Format("You picked up ~p~${0}~s~.", _cashAmount));
+            }
+
+            _victimBlip = new Blip(_victimPed)
+            {
+                Name = "VICTIM",
+                IsRouteEnabled = true,
+                RouteColor = Color.Yellow
+            };
+            _victimBlip.SetStandardColor(CalloutStandardization.BlipTypes.CIVILIANS);
+            _victimBlip.SetBlipScalePed();
+            _victimBlip.Flash(10, 10);
+
+            _progressionState = Progression.RETURN_MONEY_CONVERSATION_START;
+        }
+
+        private void returnMoney()
+        {
+            if (Main.Player.DistanceTo2D(_victimPed) > 10f) return;
+            _victimBlip.DisableRoute();
+            Conversations.ConversationLine[] conversation2Lines =
+            {
+                new Conversations.ConversationLine()
+                { //1
+                    _pedName = Conversations.ConversationLine.PedName.LOCALPLAYER,
+                    _lineVariants = new string[]
                     {
-                        _suspectPed.IsPositionFrozen = true;
-                        Main.Player.Tasks.GoStraightToPosition(_suspectPed.GetOffsetPositionFront(2f), 2f, _suspectPed.Heading / -1, 1f, 10000).WaitForCompletion(10000);
-                        Game.LocalPlayer.Character.Tasks.PlayAnimation("missexile3", "ex03_dingy_search_case_base_michael", 4f, AnimationFlags.Loop).WaitForCompletion(3000);
-
-                        Game.LocalPlayer.Character.Tasks.Clear();
-                        _suspectPed.IsPositionFrozen = false;
-
-                        if (!_foundMoneyOnSuspect)
-                        {
-                            _moneyObject.IsVisible = true;
-                            _moneyBlip = new Blip(_moneyObject)
-                            {
-                                Alpha = 0.40f,
-                                Scale = 50f,
-                                IsRouteEnabled = true,
-                                Name = "VICTIM'S MONEY"
-                            };
-
-                            _moneyBlip.SetStandardColor(CalloutStandardization.BlipTypes.OTHER);
-                            _moneyBlip.Flash(10, 10);
-
-                            _moneyCheckpoint = new Checkpoint(_moneyObject.Position, Color.Purple, 1f, 1f);
-                            _progressionState = Progression.LOCATE_MONEY;
-                        }
-                        else
-                        {
-                            Game.DisplayNotification(string.Format("You found ~p~${0}~s~ on the suspect.", _cashAmount));
-                        }
+                        "Alright, can you reiterate how much money the suspect took from you?",
+                        "We did get your money back, but can you just repeat how much money they took from you?"
                     }
-
-                    if (_progressionState == Progression.LOCATE_MONEY && Main.Player.DistanceTo2D(_moneyObject) <= 10f)
+                },
+                new Conversations.ConversationLine()
+                { //2
+                    _pedName = Conversations.ConversationLine.PedName.VICTIM,
+                    _lineVariants = new string[]
                     {
-                        Game.DisplayHelp(string.Format("Press {0} to pickup the victim's money.", FriendlyKeys.GetFriendlyName(Keys.Y)), true);
-
-                        if (Game.IsKeyDown(Keys.Y))
-                        {
-                            int rightHandBoneIndex = NativeFunction.Natives.GET_PED_BONE_INDEX<int>(Game.LocalPlayer.Character, 28422);
-                            Main.Player.Tasks.GoStraightToPosition(_moneyObject.GetOffsetPositionFront(2f), 2f, _moneyObject.Heading, 1f, 10000).WaitForCompletion(10000);
-
-                            Game.LocalPlayer.Character.Tasks.PlayAnimation("random@mugging4", "pickup_low", 4f, AnimationFlags.None);
-                            GameFiber.Sleep(500);
-                            _moneyObject.AttachTo(Main.Player, rightHandBoneIndex, _rightHandHoldingCashPileVector3, _rightHandHoldingCashPileRotator);
-                            GameFiber.Sleep(1000);
-                            NativeFunction.Natives.PLAY_SOUND_FRONTEND(-1, "PICK_UP", "HUD_FRONTEND_DEFAULT_SOUNDSET", 1);
-
-                            _moneyObject.IsVisible = false;
-                            Game.DisplayNotification(string.Format("You picked up ~p~${0}~s~.", _cashAmount));
-                        }
-
-                        _victimBlip = new Blip(_victimPed)
-                        {
-                            Name = "VICTIM",
-                            IsRouteEnabled = true,
-                            RouteColor = Color.Yellow
-                        };
-                        _victimBlip.SetStandardColor(CalloutStandardization.BlipTypes.CIVILIANS);
-                        _victimBlip.SetBlipScalePed();
-                        _victimBlip.Flash(10, 10);
-
-                        _progressionState = Progression.RETURN_MONEY_CONVERSATION_START;
+                        string.Format("Yeah I'm pretty sure they took about ${0}.", _cashAmount),
+                        string.Format("They took around ${0}.", _cashAmount),
+                        string.Format("It was probably around ${0}.", _cashAmount)
                     }
-
-                    if (_progressionState == Progression.RETURN_MONEY_CONVERSATION_START && Main.Player.DistanceTo2D(_victimPed) <= 10f)
+                },
+                new Conversations.ConversationLine()
+                { //3
+                    _pedName = Conversations.ConversationLine.PedName.LOCALPLAYER,
+                    _lineVariants = new string[]
                     {
-                        Conversations.ConversationLine[] conversation2Lines =
-                        {
-                            new Conversations.ConversationLine()
-                            { //1
-                                _pedName = Conversations.ConversationLine.PedName.LOCALPLAYER,
-                                _lineVariants = new string[]
-                                {
-                                    "Alright, can you reiterate how much money the suspect took from you?",
-                                    "We did get your money back, but can you just repeat how much money they took from you?"
-                                }
-                            },
-                            new Conversations.ConversationLine()
-                            { //2
-                                _pedName = Conversations.ConversationLine.PedName.VICTIM,
-                                _lineVariants = new string[]
-                                {
-                                    string.Format("Yeah I'm pretty sure they took about ${0}.", _cashAmount),
-                                    string.Format("They took around ${0}.", _cashAmount),
-                                    string.Format("It was probably around ${0}.", _cashAmount)
-                                }
-                            },
-                            new Conversations.ConversationLine()
-                            { //3
-                                _pedName = Conversations.ConversationLine.PedName.LOCALPLAYER,
-                                _lineVariants = new string[]
-                                {
-                                    "Alright yeah that is how much we found on him, here you go.",
-                                    "Yep that is how much he had on him, here you go."
-                                },
-                                _afterLine = delegate
-                                {
-                                    Main.Player.Tasks.GoStraightToPosition(_victimPed.GetOffsetPositionFront(2f), 2f, _victimPed.Heading / -1, 1f, 10000).WaitForCompletion(10000);
-                                    _moneyObject.IsVisible = true;
-                                    Main.Player.FaceEntity(_victimPed);
+                        "Alright yeah that is how much we found on him, here you go.",
+                        "Yep that is how much he had on him, here you go."
+                    },
+                    _afterLine = delegate
+                    {
+                        Main.Player.Tasks.GoStraightToPosition(_victimPed.GetOffsetPositionFront(2f), 2f, _victimPed.Heading / -1, 1f, 10000).WaitForCompletion(10000);
+                        _moneyObject.IsVisible = true;
+                        Main.Player.FaceEntity(_victimPed);
 
-                                    Main.Player.Tasks.PlayAnimation("random@mugging4", "return_wallet_positive_b_player", 4f, AnimationFlags.UpperBodyOnly | AnimationFlags.SecondaryTask).WaitForCompletion(2000);
-                                    _moneyObject.IsVisible = false;
-                                    Main.Player.Tasks.Clear();
-                                    End();
-                                }
-                            }
-                        };
-
-                        _conversation2 = new Conversations.Conversation(conversation2Lines);
-                        _conversation2.Start();
-                        _progressionState = Progression.RETURN_MONEY_ANIM;
+                        Main.Player.Tasks.PlayAnimation("random@mugging4", "return_wallet_positive_b_player", 4f, AnimationFlags.UpperBodyOnly | AnimationFlags.SecondaryTask).WaitForCompletion(2000);
+                        _moneyObject.IsVisible = false;
+                        Main.Player.Tasks.Clear();
+                        End();
                     }
                 }
-            });
+            };
+
+            _conversation2 = new Conversations.Conversation(conversation2Lines);
+            _conversation2.Start();
+            _progressionState = Progression.RETURN_MONEY_ANIM;
+        }
+
+        private void SearchSuspectForMoney()
+        {
+            if (Game.IsKeyDown(Keys.Y) && Main.Player.DistanceTo2D(_suspectPed) <= 10f)
+            {
+                _suspectPed.IsPositionFrozen = true;
+                Main.Player.Tasks.GoStraightToPosition(_suspectPed.GetOffsetPositionFront(2f), 2f, _suspectPed.Heading / -1, 1f, 10000).WaitForCompletion(10000);
+                Game.LocalPlayer.Character.Tasks.PlayAnimation("missexile3", "ex03_dingy_search_case_base_michael", 4f, AnimationFlags.Loop).WaitForCompletion(3000);
+
+                Game.LocalPlayer.Character.Tasks.Clear();
+                _suspectPed.IsPositionFrozen = false;
+
+                if (!_foundMoneyOnSuspect)
+                {
+                    _moneyObject.IsVisible = true;
+                    _moneyBlip = new Blip(_moneyObject)
+                    {
+                        Alpha = 0.40f,
+                        Scale = 50f,
+                        IsRouteEnabled = true,
+                        Name = "VICTIM'S MONEY"
+                    };
+
+                    _moneyBlip.SetStandardColor(CalloutStandardization.BlipTypes.OTHER);
+                    _moneyBlip.Flash(10, 10);
+
+                    _moneyCheckpoint = new Checkpoint(_moneyObject.Position, Color.Purple, 1f, 1f);
+                    _progressionState = Progression.LOCATE_MONEY;
+                }
+                else
+                {
+                    Game.DisplayNotification(string.Format("You found ~p~${0}~s~ on the suspect.", _cashAmount));
+                    _progressionState = Progression.RETURN_MONEY_CONVERSATION_START;
+                    Game.DisplayHelp("Go to the victim and return the money.");
+                    _victimBlip = new Blip(_victimPed);
+                    _victimBlip.EnableRoute(Color.Yellow);
+                    _victimBlip.SetStandardColor(CalloutStandardization.BlipTypes.CIVILIANS);
+                    _victimBlip.SetBlipScalePed();
+                    _victimBlip.Flash(10, 10);
+                }
+            }
         }
     }
 }
