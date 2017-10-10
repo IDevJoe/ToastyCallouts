@@ -18,11 +18,13 @@ namespace ToastyCallouts
         {
             Util.Log(string.Format("Current TC version is {0}, and the current RPH version is {1}.", _currentTCVersion, _currentRPHVersion), 1);
             Functions.OnOnDutyStateChanged += OnOnDutyStateChangedHandler;
+            Utilities.Timing.StartTimer();
         }
 
         public override void Finally()
         {
             Util.Log("End has been called.", 1);
+            Utilities.Timing.EndTimer();
         }
 
         private static void OnOnDutyStateChangedHandler(bool onDuty)

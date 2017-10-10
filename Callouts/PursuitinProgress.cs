@@ -71,7 +71,7 @@ namespace ToastyCallouts.Callouts
             };
             _suspectBlip.SetStandardColor(CalloutStandardization.BlipTypes.ENEMY);
 
-            Util.SpectateCameraToggler(_officerPed, _suspectPed);
+            // Util.SpectateCameraToggler(_officerPed, _suspectPed); // Same with you
             return base.OnCalloutAccepted();
         }
 
